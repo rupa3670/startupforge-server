@@ -52,6 +52,15 @@ async function run() {
         res.send(result);
     })
 
+    app.get('/all-startup',async(req,res)=>{
+        const result = startupsCollection.find().toArray();
+        res.send(result);
+    });
+    app.get('/all-opportunities',async(req,res)=>{
+        const result = opportunityCollection.find().toArray();
+        res.send(result);
+    });
+
 
   } finally {
     // Ensures that the client will close when you finish/error
