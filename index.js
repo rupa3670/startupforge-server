@@ -3,7 +3,7 @@ require('dotenv').config()
 const cors = require('cors')
 const app= express()
 const port = process.env.PORT || 5000;
-const { MongoClient, ServerApiVersion } = require('mongodb');
+const { MongoClient, ServerApiVersion, ObjectId } = require('mongodb');
 app.use(cors());
 app.use(express.json());
 const uri = process.env.MONGODB_URL;
@@ -52,12 +52,34 @@ async function run() {
         res.send(result);
     })
 
+    app.post('/opportunities', async (req, res) => {
+    const opportunityData = req.body;
+
+    const startup = await startupsCollection.findOne({ founder_email: opportunityData.founderEmail });
+    if (!startup) {
+        return res.status(404).send({ message: 'No startup found for this founder' });
+    }
+
+    const newOpportunity = {
+        ...opportunityData,
+        startup_id: new ObjectId(startup._id),
+        startup_name: startup.startup_name,
+        founder_email: opportunityData.founderEmail,
+        createdAt: new Date(),
+    };
+
+    delete newOpportunity.founderEmail; 
+
+    const result = await opportunityCollection.insertOne(newOpportunity);
+    res.status(201).send({ success: true, message: "Opportunity added successfully!", insertedId: result.insertedId });
+})
+
     app.get('/all-startup',async(req,res)=>{
-        const result = startupsCollection.find().toArray();
+        const result =await startupsCollection.find().toArray();
         res.send(result);
     });
     app.get('/all-opportunities',async(req,res)=>{
-        const result = opportunityCollection.find().toArray();
+        const result =await opportunityCollection.find().toArray();
         res.send(result);
     });
 
