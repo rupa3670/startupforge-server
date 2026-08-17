@@ -74,6 +74,19 @@ async function run() {
     res.status(201).send({ success: true, message: "Opportunity added successfully!", insertedId: result.insertedId });
 })
 
+app.get('/my-opportunities', async(req,res)=>{
+    const email = req.query.email;
+    if(!email){
+        return res.status(400).send({message:'Email query is required'})
+    }
+const result = await opportunityCollection
+.find({founder_email:email})
+.sort({createdAt:-1})
+.toArray();
+res.send(result);
+
+});
+
     app.get('/all-startup',async(req,res)=>{
         const result =await startupsCollection.find().toArray();
         res.send(result);
