@@ -30,7 +30,8 @@ async function run() {
      const startupsCollection = db.collection("startup");
      const opportunityCollection = db.collection("opportunities")
      const applicationsCollection = db.collection("applications")
-    const usersCollection = db.collection("user"); 
+    const usersCollection = client.db("test").collection("user");
+    // const usersCollection = db.collection("user"); 
      // console.log("DB name:", db.databaseName);
 // const count = await startupsCollection.countDocuments();
 // console.log("Total documents in collection:", count);
@@ -192,7 +193,7 @@ app.post('/applications',async(req,res)=>{
     const opportunityId = new ObjectId(applicationData.opportunity_id);
     const existing = await applicationsCollection.findOne({
         opportunity_id:opportunityId,
-        application_email:applicationData.applicant_email
+        applicant_email:applicationData.applicant_email
     });
     if(existing){
         return res.status(409).send({message:'You have already to this opportunity'});
@@ -237,6 +238,33 @@ app.patch('/users/:email',async(req,res)=>{
     res.send(result);
 })
 
+app.get('/my-application',async(req,res)=>{
+    const email = req.query.email;
+    if(!email)
+    {
+        return res.status(400).send({message:'Email query is required'});
+    }
+const applications = await applicationsCollection
+.find({applicant_email:email})
+.sort({applied_at:-1})
+.toArray();
+
+const opportunityIds = applications.map((a)=>
+    a.opportunity_id);
+const opportunities = await opportunityCollection
+.find({_id:{$in:opportunityIds}})
+.toArray();
+
+const withDetails = applications.map((app)=>{
+    const opp =  opportunities.find((o)=>o._id.toString()===app.opportunity_id.toString());
+    return{
+        ...app,
+        role_title:opp?.role_title || '',
+        startup_name: opp?.startup_name || '',
+    };
+});
+res.send(withDetails);
+})
    
 
 
