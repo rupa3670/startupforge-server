@@ -124,7 +124,7 @@ async function run() {
     const result = await opportunityCollection.insertOne(newOpportunity);
     res.status(201).send({ success: true, message: "Opportunity added successfully!", insertedId: result.insertedId });
 })
-//founder nijer email diye filter korbe
+
 app.get('/my-opportunities', async(req,res)=>{
     const email = req.query.email;
     if(!email){
@@ -138,7 +138,7 @@ res.send(result);
 
 });
 
-//edit form er pre-fill korar jnno single opportunity
+
 app.get('/opportunities/:id',async(req,res)=>{
     const id = req.params.id;
     const result = await opportunityCollection.findOne({
@@ -164,6 +164,7 @@ app.delete('/opportunities/:id',async(req,res)=>{
 });
 
 app.get('/founder-applications',async(req,res)=>{
+    
     const email = req.query.email;
     if(!email){
         return res.status(400).send({message:'Email query is required'});
@@ -188,6 +189,35 @@ const withRoleTitle = result.map((app)=>{
 res.send(withRoleTitle)
 })
 
+
+app.get('/founder-overview',async(req,res)=>{
+    const email = req.query.email;
+    
+    if(!email){
+        return res.status(400).send({message:'Email query is required'});
+    }
+
+    const opportunities = await opportunityCollection.find({founder_email:email}).toArray();
+
+const opportunityIds = opportunities.map(o=>o._id);
+
+const totalOpportunities = opportunities.length;
+
+const totalApplications = await applicationsCollection.countDocuments({
+    opportunity_id:{$in: opportunityIds}
+});
+const acceptMembers = await applicationsCollection.countDocuments({
+    opportunity_id:{$in:opportunityIds},
+    status:"accepted"
+});
+
+res.send({
+    opportunities:totalOpportunities,
+    applications:totalApplications,
+    accepted:acceptMembers
+});
+})
+
 app.post('/applications',async(req,res)=>{
     const applicationData=req.body;
     const opportunityId = new ObjectId(applicationData.opportunity_id);
@@ -202,7 +232,7 @@ app.post('/applications',async(req,res)=>{
     const newApplication={
         ...applicationData,
         opportunity_id:opportunityId,
-        status:'Pending',
+        status:'pending',
         applied_at:new Date(),
     };
     const result = await applicationsCollection.insertOne(newApplication);
@@ -213,7 +243,7 @@ app.patch('/applications/:id/status', async (req, res) => {
     const { status } = req.body;
     const result = await applicationsCollection.updateOne(
         { _id: new ObjectId(id) },
-        { $set: { status } }
+        { $set: { status: status.toLowerCase() } }
     );
     res.send(result);
 });
@@ -265,6 +295,29 @@ const withDetails = applications.map((app)=>{
 });
 res.send(withDetails);
 })
+
+app.get('/all-users',async(req,res)=>{
+    const result = await usersCollection.find().toArray();
+    res.send(result);
+});
+
+app.patch('/users/:email/block',async(req,res)=>{
+    const email = req.params.email;
+    const result = await usersCollection.updateOne(
+        {email},
+        {$set:{isBlocked:true}}
+    );
+    res.send(result);
+});
+
+app.patch('/users/:email/unblock',async(req,res)=>{
+    const email = req.params.email;
+    const result = await usersCollection.updateOne(
+        {email},
+        {$set:{isBlocked:false}}
+    );
+res.send(result);
+});
    
 
 
