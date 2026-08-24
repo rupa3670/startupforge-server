@@ -296,6 +296,19 @@ const withDetails = applications.map((app)=>{
 res.send(withDetails);
 })
 
+app.get('/admin/overview',async(req,res)=>{
+    const totalUsers = await usersCollection.countDocuments();
+    const totalStartups = await startupsCollection.countDocuments();
+    const totalOpportunities = await opportunityCollection.countDocuments();
+
+    res.send({
+        totalUsers,
+        totalStartups,
+        totalOpportunities,
+        totalRevenue:0,
+    });
+});
+
 app.get('/all-users',async(req,res)=>{
     const result = await usersCollection.find().toArray();
     res.send(result);
@@ -318,6 +331,26 @@ app.patch('/users/:email/unblock',async(req,res)=>{
     );
 res.send(result);
 });
+
+app.get('/admin/startups',async(req,res)=>{
+    const result = await startupsCollection.find().toArray();
+    res.send(result);
+});
+
+app.patch('/admin/startups/:id/approve',async(req,res)=>{
+    const id = req.params.id;
+    const result = await startupsCollection.updateOne(
+        {_id:new ObjectId(id)},
+        {$set:{status:'approved'}}
+    );
+    res.send(result);
+});
+
+app.delete('/admin/startups/:id',async(req,res)=>{
+    const id = req.params.id;
+    const result = await startupsCollection.deleteOne({_id: new ObjectId(id)});
+    res.send(result);
+})
    
 
 
