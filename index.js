@@ -70,17 +70,22 @@ async function run() {
     res.status(201).send({success:true, message:'Startup created successfully!', insertedId: result.insertedId});
 });
 
-    app.patch('/startup/:id',async(req,res)=>{
-        const id = req.params.id;
-        const updatedData = req.body;
-        delete updatedData._id;
+    app.patch('/startup/:id', async (req, res) => {
+    const id = req.params.id;
+    const updatedData = req.body;
+    delete updatedData._id;
 
-        const result = await startupsCollection.updateOne(
-            {_id:new ObjectId(id)},
-            {$set:updatedData}
-        );
-        res.send(result);
-    });
+    const result = await startupsCollection.updateOne(
+        { _id: new ObjectId(id) },
+        { $set: updatedData }
+    );
+
+    if (result.matchedCount === 0) {
+        return res.status(404).send({ success: false, message: 'Startup not found' });
+    }
+
+    res.send({ success: true, message: 'Startup updated successfully!', modifiedCount: result.modifiedCount });
+});
      app.delete('/startup/:id', async (req, res) => {
         const id = req.params.id;
         const result = await startupsCollection.deleteOne({ _id: new ObjectId(id) });
@@ -98,17 +103,75 @@ async function run() {
         res.send(result);
     })
 
- app.get('/all-opportunities',async(req,res)=>{
-        const result =await opportunityCollection.find().toArray();
-        res.send(result);
-    });
+app.get('/all-opportunities', async (req, res) => {
+    const { search, workType, industry } = req.query;
+    const limit = Number(req.query.limit) || 9;
+    const page = Number(req.query.page) || 1;
+    const skip = (page - 1) * limit;
 
-    app.post('/opportunities', async (req, res) => {
+    const query = {};
+
+    if (search) {
+        query.$or = [
+            { role_title: { $regex: search, $options: 'i' } },
+            { required_skills: { $regex: search, $options: 'i' } },
+        ];
+    }
+    if (workType) {
+        const workTypes = workType.split(',');
+        query.work_type = { $in: workTypes };
+    }
+    if (industry) {
+        const industries = industry.split(',');
+        query.industry = { $in: industries };
+    }
+
+    const total_data = await opportunityCollection.countDocuments(query);
+
+    const result = await opportunityCollection
+        .find(query)
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(limit)
+        .toArray();
+
+    res.send({
+        data: result,
+        totalCount: total_data,
+        totalPages: Math.ceil(total_data / limit),
+        currentPage: page,
+    });
+});
+
+
+
+      app.post('/opportunities', async (req, res) => {
     const opportunityData = req.body;
+    // console.log('1. founderEmail received:', opportunityData.founderEmail); 
 
     const startup = await startupsCollection.findOne({ founder_email: opportunityData.founderEmail });
+    // console.log('2. startup found:', startup); 
+    
     if (!startup) {
+        // console.log('3. RETURNING 404 - stopping here'); 
         return res.status(404).send({ message: 'No startup found for this founder' });
+    }
+
+    // console.log('4. Reached count check'); 
+    const opportunityCount = await opportunityCollection.countDocuments({
+        founder_email:opportunityData.founderEmail
+    });
+    // console.log('5. opportunityCount:', opportunityCount); 
+
+    if(opportunityCount>=3){
+        const founder = await usersCollection.findOne({email:opportunityData.founderEmail});
+        // console.log('6. founder plan check:', founder); 
+    if(!founder || founder.plan !== 'premium'){
+        // console.log('7. RETURNING 403 - should redirect to pricing'); 
+        return res.status(403).send({message:'Free limit reached.Upgrade to premium to post more opportunities.',
+            redirect:'/dashboard/founder/add-opportunities/pricing'
+        })
+    }
     }
 
     const newOpportunity = {
