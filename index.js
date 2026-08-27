@@ -4,6 +4,62 @@ const cors = require('cors')
 const app= express()
 const port = process.env.PORT || 5000;
 const { MongoClient, ServerApiVersion, ObjectId } = require('mongodb');
+
+const {createRemoteJWKSet, jwtVerify} = require('jose-cjs');
+
+const JWKS = createRemoteJWKSet(
+    new URL(`${process.env.BETTER_AUTH_URL}/api/auth/jwks`)
+);
+
+const verifyToken = async (req,res,next)=>{
+    const authHeader = req.headers.authorization;
+    if(!authHeader){
+        return res.status(401).json({message:"Unauthorized access"});
+    }
+const token = authHeader.split(" ")[1];
+if(!token){
+    return res.status(401).json({message:"Unauthorized access"});
+}
+jwtVerify(token,JWKS)
+.then((result)=>{
+    req.decoded = result.payload;
+    next();
+})
+.catch((err)=>{
+    return res.status(401).json({message:"Unauthorized access"});
+})
+
+}
+const verifyEmail = (req,res,next)=>{
+        if(req.params.email && req.decoded.email !== req.params.email) {
+            return res.status(403).json({message:"forbidden access"});
+        }
+    next();
+    };
+const verifyFounder = async(req,res,next)=>{
+    const user = await usersCollection.findOne({email:req.decoded.email});
+    if(user?.role !=="founder"){
+        return res.status(403).json({message:"forbidden access"});
+    }
+next();
+};
+
+const verifyCollaborator = async (req, res, next) => {
+    const user = await usersCollection.findOne({ email: req.decoded.email });
+    if (user?.role !== "collaborator") {
+        return res.status(403).json({ message: "forbidden access" });
+    }
+    next();
+};
+
+const verifyAdmin = async(req, res,next)=>{
+    const user = await usersCollection.findOne({email:req.decoded.email});
+    if(user?.role !== 'admin'){
+        return res.status(403).json({message:"forbidden access"});
+    }
+next();
+};
+
 app.use(cors());
 app.use(express.json());
 const uri = process.env.MONGODB_URL;
@@ -30,7 +86,9 @@ async function run() {
      const startupsCollection = db.collection("startup");
      const opportunityCollection = db.collection("opportunities")
      const applicationsCollection = db.collection("applications")
-    const usersCollection = client.db("test").collection("user");
+     usersCollection = client.db("test").collection("user");
+
+     const paymentsCollections = db.collection("payments")
     // const usersCollection = db.collection("user"); 
      // console.log("DB name:", db.databaseName);
 // const count = await startupsCollection.countDocuments();
@@ -50,7 +108,7 @@ async function run() {
         res.send(result);
     });
 
-    app.get('/my-startup', async(req,res)=>{
+    app.get('/my-startup',verifyToken, async(req,res)=>{
         const email = req.query.email;
         if(!email){
             return res.status(400).send({message:'Email is required'});
@@ -59,7 +117,7 @@ async function run() {
         res.json(result);
     });
 
-    app.post('/startup', async(req,res)=>{
+    app.post('/startup',verifyToken,verifyFounder, async(req,res)=>{
     const startupData = req.body;
     const existing = await startupsCollection.findOne({founder_email: startupData.founder_email});
     if(existing){
@@ -70,7 +128,7 @@ async function run() {
     res.status(201).send({success:true, message:'Startup created successfully!', insertedId: result.insertedId});
 });
 
-    app.patch('/startup/:id', async (req, res) => {
+    app.patch('/startup/:id',verifyToken,verifyFounder, async (req, res) => {
     const id = req.params.id;
     const updatedData = req.body;
     delete updatedData._id;
@@ -86,7 +144,7 @@ async function run() {
 
     res.send({ success: true, message: 'Startup updated successfully!', modifiedCount: result.modifiedCount });
 });
-     app.delete('/startup/:id', async (req, res) => {
+     app.delete('/startup/:id',verifyToken,verifyFounder, async (req, res) => {
         const id = req.params.id;
         const result = await startupsCollection.deleteOne({ _id: new ObjectId(id) });
         res.send(result);
@@ -145,7 +203,7 @@ app.get('/all-opportunities', async (req, res) => {
 
 
 
-      app.post('/opportunities', async (req, res) => {
+      app.post('/opportunities',verifyToken, verifyFounder, async (req, res) => {
     const opportunityData = req.body;
     // console.log('1. founderEmail received:', opportunityData.founderEmail); 
 
@@ -188,7 +246,7 @@ app.get('/all-opportunities', async (req, res) => {
     res.status(201).send({ success: true, message: "Opportunity added successfully!", insertedId: result.insertedId });
 })
 
-app.get('/my-opportunities', async(req,res)=>{
+app.get('/my-opportunities',verifyToken, async(req,res)=>{
     const email = req.query.email;
     if(!email){
         return res.status(400).send({message:'Email query is required'})
@@ -209,7 +267,7 @@ app.get('/opportunities/:id',async(req,res)=>{
 res.send(result);
 })
 
-app.patch('/opportunities/:id',async(req,res)=>{
+app.patch('/opportunities/:id',verifyToken,verifyFounder,async(req,res)=>{
     const id = req.params.id;
     const updatedData = req.body;
     delete updatedData._id;
@@ -219,14 +277,14 @@ app.patch('/opportunities/:id',async(req,res)=>{
 );
 res.send(result);
 });
-app.delete('/opportunities/:id',async(req,res)=>{
+app.delete('/opportunities/:id',verifyToken,verifyFounder,async(req,res)=>{
     const id = req.params.id;
     const result = await opportunityCollection
     .deleteOne({_id:new ObjectId(id)});
     res.send(result);
 });
 
-app.get('/founder-applications',async(req,res)=>{
+app.get('/founder-applications',verifyToken,verifyFounder,async(req,res)=>{
     
     const email = req.query.email;
     if(!email){
@@ -253,7 +311,7 @@ res.send(withRoleTitle)
 })
 
 
-app.get('/founder-overview',async(req,res)=>{
+app.get('/founder-overview',verifyToken,verifyFounder,async(req,res)=>{
     const email = req.query.email;
     
     if(!email){
@@ -281,12 +339,12 @@ res.send({
 });
 })
 
-app.post('/applications',async(req,res)=>{
+app.post('/applications',verifyToken,verifyCollaborator,async(req,res)=>{
     const applicationData=req.body;
     const opportunityId = new ObjectId(applicationData.opportunity_id);
     const existing = await applicationsCollection.findOne({
         opportunity_id:opportunityId,
-        applicant_email:applicationData.applicant_email
+        applicant_email:req.decoded.email
     });
     if(existing){
         return res.status(409).send({message:'You have already to this opportunity'});
@@ -295,13 +353,14 @@ app.post('/applications',async(req,res)=>{
     const newApplication={
         ...applicationData,
         opportunity_id:opportunityId,
+        applicant_email:req.decoded.email,
         status:'pending',
         applied_at:new Date(),
     };
     const result = await applicationsCollection.insertOne(newApplication);
     res.status(201).send({success:true,message:'Application submitted', insertedId:result.insertedId})
 });
-app.patch('/applications/:id/status', async (req, res) => {
+app.patch('/applications/:id/status',verifyToken,verifyFounder, async (req, res) => {
     const id = req.params.id;
     const { status } = req.body;
     const result = await applicationsCollection.updateOne(
@@ -311,7 +370,7 @@ app.patch('/applications/:id/status', async (req, res) => {
     res.send(result);
 });
 
-app.get('/users/:email',async(req,res)=>{
+app.get('/users/:email',verifyToken,verifyEmail,async(req,res)=>{
     const email = req.params.email;
     const result = await usersCollection.findOne({email});
     if(!result){
@@ -320,7 +379,7 @@ app.get('/users/:email',async(req,res)=>{
 res.send(result);
 });
 
-app.patch('/users/:email',async(req,res)=>{
+app.patch('/users/:email',verifyToken,verifyEmail,async(req,res)=>{
     const email = req.params.email;
     const{name,image,bio} =req.body;
 
@@ -331,7 +390,7 @@ app.patch('/users/:email',async(req,res)=>{
     res.send(result);
 })
 
-app.get('/my-application',async(req,res)=>{
+app.get('/my-application',verifyToken,async(req,res)=>{
     const email = req.query.email;
     if(!email)
     {
@@ -359,7 +418,35 @@ const withDetails = applications.map((app)=>{
 res.send(withDetails);
 })
 
-app.get('/admin/overview',async(req,res)=>{
+app.get('/collaborator-overview', verifyToken, verifyCollaborator, async (req, res) => {
+            const email = req.query.email;
+            if (!email) {
+                return res.status(400).send({ message: 'Email query is required' });
+            }
+            if (email !== req.decoded.email) {
+                return res.status(403).send({ message: 'forbidden access' });
+            }
+
+            const totalApplications = await applicationsCollection.countDocuments({
+                applicant_email: email
+            });
+            const acceptedApplications = await applicationsCollection.countDocuments({
+                applicant_email: email,
+                status: 'accepted'
+            });
+            const pendingApplications = await applicationsCollection.countDocuments({
+                applicant_email: email,
+                status: 'pending'
+            });
+
+            res.send({
+                totalApplications,
+                accepted: acceptedApplications,
+                pending: pendingApplications,
+            });
+        });
+
+app.get('/admin/overview',verifyToken,verifyAdmin,async(req,res)=>{
     const totalUsers = await usersCollection.countDocuments();
     const totalStartups = await startupsCollection.countDocuments();
     const totalOpportunities = await opportunityCollection.countDocuments();
@@ -368,16 +455,16 @@ app.get('/admin/overview',async(req,res)=>{
         totalUsers,
         totalStartups,
         totalOpportunities,
-        totalRevenue:0,
+        totalRevenue,
     });
 });
 
-app.get('/all-users',async(req,res)=>{
+app.get('/all-users',verifyToken,verifyAdmin,async(req,res)=>{
     const result = await usersCollection.find().toArray();
     res.send(result);
 });
 
-app.patch('/users/:email/block',async(req,res)=>{
+app.patch('/users/:email/block',verifyToken,verifyAdmin,async(req,res)=>{
     const email = req.params.email;
     const result = await usersCollection.updateOne(
         {email},
@@ -386,7 +473,7 @@ app.patch('/users/:email/block',async(req,res)=>{
     res.send(result);
 });
 
-app.patch('/users/:email/unblock',async(req,res)=>{
+app.patch('/users/:email/unblock',verifyToken,verifyAdmin,async(req,res)=>{
     const email = req.params.email;
     const result = await usersCollection.updateOne(
         {email},
@@ -395,12 +482,12 @@ app.patch('/users/:email/unblock',async(req,res)=>{
 res.send(result);
 });
 
-app.get('/admin/startups',async(req,res)=>{
+app.get('/admin/startups',verifyToken,verifyAdmin,async(req,res)=>{
     const result = await startupsCollection.find().toArray();
     res.send(result);
 });
 
-app.patch('/admin/startups/:id/approve',async(req,res)=>{
+app.patch('/admin/startups/:id/approve',verifyToken,verifyAdmin,async(req,res)=>{
     const id = req.params.id;
     const result = await startupsCollection.updateOne(
         {_id:new ObjectId(id)},
@@ -409,12 +496,42 @@ app.patch('/admin/startups/:id/approve',async(req,res)=>{
     res.send(result);
 });
 
-app.delete('/admin/startups/:id',async(req,res)=>{
+app.delete('/admin/startups/:id',verifyToken,verifyAdmin,async(req,res)=>{
     const id = req.params.id;
     const result = await startupsCollection.deleteOne({_id: new ObjectId(id)});
     res.send(result);
 })
+
+app.get('/admin/transactions',verifyToken,verifyAdmin,async(req,res)=>{
+    const result = (await paymentsCollections).find().sort({paid_at:-1}).toArray();
+    res.send(result);
+});
    
+
+app.post('/payments',verifyToken,async(req,res)=>{
+    const {transaction_id, amount,payment_status} = req.body;
+    const email = req.decoded.email;
+
+    const existing = await paymentsCollections.findOne({transaction_id});
+    if(existing){
+        return res.send({message:'already recorder', payment:existing});
+    }
+const paymentRecord ={
+    user_email:email,
+    amount,
+    transaction_id,
+    payment_status,
+    paid_at : new Date(),
+}
+await paymentsCollections.insertOne(paymentRecord);
+await usersCollection.updateOne(
+    {email},
+    {$set:{plan:'premium'}}
+);
+
+res.status(201).send({success:true, payment:paymentRecord});
+})
+
 
 
   } finally {
