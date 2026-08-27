@@ -446,17 +446,28 @@ app.get('/collaborator-overview', verifyToken, verifyCollaborator, async (req, r
             });
         });
 
-app.get('/admin/overview',verifyToken,verifyAdmin,async(req,res)=>{
+app.get('/admin/overview', verifyToken, verifyAdmin, async (req, res) => {
     const totalUsers = await usersCollection.countDocuments();
     const totalStartups = await startupsCollection.countDocuments();
     const totalOpportunities = await opportunityCollection.countDocuments();
 
-    res.send({
-        totalUsers,
-        totalStartups,
-        totalOpportunities,
-        totalRevenue,
-    });
+    const revenueResult = await paymentsCollections.aggregate([
+        { $group: { _id: null, total: { $sum: "$amount" } } }
+    ]).toArray();
+    const totalRevenue = revenueResult[0]?.total || 0;
+
+    res.send({ totalUsers, totalStartups, totalOpportunities, totalRevenue });
+});
+
+app.post('/users', async (req, res) => {
+    const userData = req.body; 
+    const existing = await usersCollection.findOne({ email: userData.email });
+    if (existing) {
+        return res.send({ message: 'User already exists', insertedId: null });
+    }
+    const newUser = { ...userData, isBlocked: false, createdAt: new Date() };
+    const result = await usersCollection.insertOne(newUser);
+    res.status(201).send(result);
 });
 
 app.get('/all-users',verifyToken,verifyAdmin,async(req,res)=>{
@@ -502,35 +513,39 @@ app.delete('/admin/startups/:id',verifyToken,verifyAdmin,async(req,res)=>{
     res.send(result);
 })
 
-app.get('/admin/transactions',verifyToken,verifyAdmin,async(req,res)=>{
-    const result = (await paymentsCollections).find().sort({paid_at:-1}).toArray();
+app.get('/admin/transactions', verifyToken, verifyAdmin, async (req, res) => {
+    const result = await paymentsCollections.find().sort({ paid_at: -1 }).toArray();
     res.send(result);
 });
    
 
-app.post('/payments',verifyToken,async(req,res)=>{
-    const {transaction_id, amount,payment_status} = req.body;
-    const email = req.decoded.email;
+app.post('/payments', async (req, res) => {
+    const { transaction_id, amount, payment_status, founder_email } = req.body;
 
-    const existing = await paymentsCollections.findOne({transaction_id});
-    if(existing){
-        return res.send({message:'already recorder', payment:existing});
+    if (!founder_email) {
+        return res.status(400).send({ message: 'founder_email is required' });
     }
-const paymentRecord ={
-    user_email:email,
-    amount,
-    transaction_id,
-    payment_status,
-    paid_at : new Date(),
-}
-await paymentsCollections.insertOne(paymentRecord);
-await usersCollection.updateOne(
-    {email},
-    {$set:{plan:'premium'}}
-);
 
-res.status(201).send({success:true, payment:paymentRecord});
-})
+    const existing = await paymentsCollections.findOne({ transaction_id });
+    if (existing) {
+        return res.send({ message: 'already recorded', payment: existing });
+    }
+
+    const paymentRecord = {
+        user_email: founder_email,
+        amount,
+        transaction_id,
+        payment_status,
+        paid_at: new Date(),
+    };
+    await paymentsCollections.insertOne(paymentRecord);
+    await usersCollection.updateOne(
+        { email: founder_email },
+        { $set: { plan: 'premium' } }
+    );
+
+    res.status(201).send({ success: true, payment: paymentRecord });
+});
 
 
 
