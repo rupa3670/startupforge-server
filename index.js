@@ -33,8 +33,7 @@ const verifyToken = async (req, res, next) => {
             next();
         })
         .catch((err) => {
-            console.error("❌ JWT verify failed:", err.message, err.code); // এই লাইন যোগ করুন
-            return res.status(401).json({ message: "Unauthorized access", debug: err.message }); // সাময়িকভাবে debug info পাঠান
+            return res.status(401).json({ message: "Unauthorized access" });
         })
 }
 const verifyEmail = (req, res, next) => {
@@ -86,14 +85,13 @@ async function run() {
         console.log("Pinged your deployment. You successfully connected to MongoDB!");
 
         const db = client.db("startupForge");
-        console.log("Server file loaded fresh at:", new Date());
         console.log("Connected DB name:", db.databaseName);
         // ── assign to the top-level variables, no `const` here ──
         startupsCollection = db.collection("startup");
         opportunityCollection = db.collection("opportunities");
         applicationsCollection = db.collection("applications");
         paymentsCollections = db.collection("payments");
-           usersCollection = client.db("test").collection("user");
+        usersCollection = client.db("test").collection("user");
 
         app.get('/startup', async (req, res) => {
             const limit = parseInt(req.query.limit) || 6;
@@ -241,6 +239,7 @@ async function run() {
                 ...opportunityData,
                 startup_id: new ObjectId(startup._id),
                 startup_name: startup.startup_name,
+                industry: startup.industry,
                 founder_email: opportunityData.founderEmail,
                 createdAt: new Date(),
             };
@@ -251,6 +250,21 @@ async function run() {
             res.status(201).send({ success: true, message: "Opportunity added successfully!", insertedId: result.insertedId });
         })
 
+       app.get('/industries', async (req, res) => {
+    try {
+        const industries = await opportunityCollection.aggregate([
+            { $match: { industry: { $ne: null } } },
+            { $group: { _id: "$industry" } },
+            { $sort: { _id: 1 } }
+        ]).toArray();
+
+        const result = industries.map((i) => i._id).filter(Boolean);
+        res.send(result);
+    } catch (err) {
+        console.error('GET /industries error:', err);
+        res.status(500).send({ message: err.message });
+    }
+});
         app.get('/my-opportunities', verifyToken, async (req, res) => {
             const email = req.query.email;
             if (!email) {
@@ -452,7 +466,7 @@ async function run() {
         });
 
         app.get('/admin/overview', verifyToken, verifyAdmin, async (req, res) => {
-            const totalUsers = await usersCollection.countDocuments();
+            const totalUsers = await usersCollection.countDocuments({ role: { $ne: 'admin' } });
             const totalStartups = await startupsCollection.countDocuments();
             const totalOpportunities = await opportunityCollection.countDocuments();
 
@@ -476,19 +490,19 @@ async function run() {
         });
 
         app.get('/all-users', verifyToken, verifyAdmin, async (req, res) => {
-            const result = await usersCollection.find().toArray();
+            const result = await usersCollection.find({ role: { $ne: 'admin' } }).toArray();
             res.send(result);
         });
 
         app.get('/debug/dbcheck', async (req, res) => {
-    const count = await usersCollection.countDocuments();
-    const sample = await usersCollection.find().limit(5).toArray();
-    res.json({
-        namespace: usersCollection.namespace,
-        totalUsers: count,
-        sampleUsers: sample
-    });
-});
+            const count = await usersCollection.countDocuments();
+            const sample = await usersCollection.find().limit(5).toArray();
+            res.json({
+                namespace: usersCollection.namespace,
+                totalUsers: count,
+                sampleUsers: sample
+            });
+        });
 
         app.patch('/user/:email/block', verifyToken, verifyAdmin, async (req, res) => {
             const email = req.params.email;
